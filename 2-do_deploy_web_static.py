@@ -1,50 +1,58 @@
-from fabric.api import env, put, run
+#!/usr/bin/python3
+"""pack and deploy content to server
+"""
+from fabric.api import local, env, run, put
+from datetime import datetime
 import os
+env.hosts = ['35.231.156.161', '34.73.64.44']
+env.user = 'ubuntu'
 
-# Define the hosts to deploy to
-env.hosts = ['<IP web-01>', '<IP web-02>']
+
+def do_pack():
+    """pack all content within web_static
+    into a .tgz archive
+    The archive will be put in versions/
+    """
+    if not os.path.exists("versions"):
+        local("mkdir versions")
+    now = datetime.now()
+    name = "versions/web_static_{}.tgz".format(
+        now.strftime("%Y%m%d%H%M%S")
+    )
+    cmd = "tar -cvzf {} {}".format(name, "web_static")
+    result = local(cmd)
+    if not result.failed:
+        return name
+
 
 def do_deploy(archive_path):
+    """deploy package to remote server
+    Arguments:
+        archive_path: path to archive to deploy
     """
-    Distributes an archive to the web servers.
-    """
-    # Check if the archive exists
-    if not os.path.exists(archive_path):
+    if not archive_path or not os.path.exists(archive_path):
         return False
-
-    # Extract the archive file name and base name
-    archive_file = archive_path.split("/")[-1]
-    archive_base = archive_file.split(".")[0]
-    release_folder = f"/data/web_static/releases/{archive_base}/"
-
+    put(archive_path, '/tmp')
+    ar_name = archive_path[archive_path.find("/") + 1: -4]
     try:
-        # Upload the archive to /tmp/ directory on the web server
-        put(archive_path, f"/tmp/{archive_file}")
-
-        # Create the release folder
-        run(f"mkdir -p {release_folder}")
-
-        # Uncompress the archive to the release folder
-        run(f"tar -xzf /tmp/{archive_file} -C {release_folder}")
-
-        # Delete the archive from the web server
-        run(f"rm /tmp/{archive_file}")
-
-        # Move the contents out of the web_static sub-folder
-        run(f"mv {release_folder}web_static/* {release_folder}")
-
-        # Delete the empty web_static folder
-        run(f"rm -rf {release_folder}web_static")
-
-        # Delete the symbolic link current
-        run("rm -rf /data/web_static/current")
-
-        # Create a new symbolic link
-        run(f"ln -s {release_folder} /data/web_static/current")
-
+        run('mkdir -p /data/web_static/releases/{}/'.format(ar_name))
+        run('tar -xzf /tmp/{}.tgz -C /data/web_static/releases/{}/'.format(
+                ar_name, ar_name
+        ))
+        run('rm /tmp/{}.tgz'.format(ar_name))
+        run('mv /data/web_static/releases/{}/web_static/* \
+            /data/web_static/releases/{}/'.format(
+                ar_name, ar_name
+        ))
+        run('rm -rf /data/web_static/releases/{}/web_static'.format(
+            ar_name
+        ))
+        run('rm -rf /data/web_static/current')
+        run('ln -s /data/web_static/releases/{}/ \
+            /data/web_static/current'.format(
+            ar_name
+        ))
         print("New version deployed!")
         return True
-
     except:
         return False
-
